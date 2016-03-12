@@ -363,14 +363,12 @@ sub http_request {
   my (undef, $method, $url, %args) = @_;
 
   state $cookie_jar = {};
-  state $dns = do {
-    my $dns = Net::DNS::Paranoid->new;
-    $dns->blocked_hosts(qr/^[a-z0-9-]+$/i, qr/\.internal$/i);
-    $dns
-  };
+  state $dns = Net::DNS::Paranoid->new;
+
+  state $user_agent = 'bort/'.($Bort::VERSION // 'dev');
 
   $args{headers} //= {};
-  $args{headers}->{"user-agent"} //= "bort/0.01";
+  $args{headers}->{"user-agent"} //= $user_agent;
 
   $args{cookie_jar} //= $cookie_jar;
 
