@@ -17,7 +17,7 @@ if ($opts{h}) {
   }
   print <<EOF;
 
-usage: bort.pl [opts]
+usage: bort [opts]
 
  -C               compile check, load plugins then exit
  -c <config>      run with alternate config (default: bort.ini)

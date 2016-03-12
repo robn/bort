@@ -22,7 +22,7 @@ my ($config, $log, $slack);
 package Bort::App {
 
 use AnyEvent;
-use AnyEvent::Log;
+use AnyEvent::Log ();
 use AnyEvent::SlackRTM;
 
 use Module::Pluggable ();
