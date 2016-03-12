@@ -218,7 +218,7 @@ sub add_command_watch {
 package Bort {
 
 use AnyEvent;
-use AnyEvent::Socket;
+use AnyEvent::Socket ();
 use AnyEvent::HTTP ();
 use Net::DNS::Paranoid;
 use JSON::XS qw(encode_json decode_json);
@@ -372,13 +372,14 @@ sub http_request {
 
   $args{cookie_jar} //= $cookie_jar;
 
-  $args{tcp_connect} //= sub {
-    my (undef, $error) = $dns->resolve($_[0]);
+  $args{tcp_connect} //= sub ($$$;$) {
+    my ($host, $port, $connect, $prepare) = @_;
+    my ($ip, $error) = $dns->resolve($host);
     if ($error) {
-      Bort->log("error resolving $_[0]: $error");
+      Bort->log("error resolving $host $error");
       return;
     }
-    goto \&tcp_connect;
+    AnyEvent::Socket::tcp_connect($ip->[0], $port, $connect, $prepare);
   };
 
   $url = "$url"; # stringify URI objects
