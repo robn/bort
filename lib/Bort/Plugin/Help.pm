@@ -4,34 +4,34 @@ use 5.014;
 use warnings;
 use strict;
 
-my %HelpText;
+my %help_text;
 
-Bort->AddPluginMethod("AddHelp", sub {
-  my (undef, $Topic, @Lines) = @_;
-  $HelpText{lc $Topic} = [ map { s/[\r\n]$//mr } @Lines ];
-  Bort->Log("Added help topic: $Topic");
+Bort->add_plugin_method(add_help => sub {
+  my (undef, $topic, @lines) = @_;
+  $help_text{lc $topic} = [ map { s/[\r\n]$//mr } @lines ];
+  Bort->log("Added help topic: $topic");
 });
 
-sub Init {
-  Bort->AddCommandWatch(help => sub {
-    my ($Topic) = @_;
+sub init {
+  Bort->add_command_watch(help => sub {
+    my ($topic) = @_;
 
-    unless (defined $Topic) {
-      state $TopHelp = [ map {
+    unless (defined $topic) {
+      state $top_help = [ map {
         chomp;
-        s/%topics%/join ", ", sort(keys %HelpText)/er;
+        s/%topics%/join ", ", sort(keys %help_text)/er;
       } <DATA> ];
 
-      Bort->Reply([{ text => join("\n", @$TopHelp), fallback => $TopHelp->[0] }]);
+      Bort->reply([{ text => join("\n", @$top_help), fallback => $top_help->[0] }]);
       return;
     }
 
-    $Topic = lc $Topic;
-    if (exists $HelpText{$Topic}) {
-      Bort->Reply([{ text => join("\n", @{$HelpText{$Topic}}), fallback => $HelpText{$Topic}->[0] }]);
+    $topic = lc $topic;
+    if (exists $help_text{$topic}) {
+      Bort->reply([{ text => join("\n", @{$help_text{$topic}}), fallback => $help_text{$topic}->[0] }]);
     }
     else {
-      Bort->Reply("no help for '$Topic'");
+      Bort->reply("no help for '$topic'");
     }
   });
 

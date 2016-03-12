@@ -9,9 +9,9 @@ use Getopt::Std;
 
 use Bort;
 
-getopts('Cc:h', \my %Opts);
+getopts('Cc:h', \my %opts);
 
-if ($Opts{h}) {
+if ($opts{h}) {
   if (-t STDOUT) {
     print for <DATA>;
   }
@@ -26,16 +26,16 @@ EOF
   exit 0;
 }
 
-my $ConfigFile = $Opts{c} // 'bort.ini';
+my $config_file = $opts{c} // 'bort.ini';
 
-Bort::App->Init($ConfigFile);
+Bort::App->init($config_file);
 
-if ($Opts{C}) {
+if ($opts{C}) {
   say "bort: compile check done";
   exit 0;
 }
 
-Bort::App->Run;
+Bort::App->run;
 
 exit 0;
 

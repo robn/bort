@@ -16,7 +16,7 @@ use strict;
 # are declared at the top (right below this comment).
 
 # data shared across packages
-my ($Config, $Log, $Slack);
+my ($config, $log, $slack);
 
 
 package Bort::App {
@@ -27,100 +27,100 @@ use AnyEvent::SlackRTM;
 
 use Module::Pluggable ();
 
-my @Plugins;
+my @plugins;
 
-sub Init {
-  my (undef, $ConfigFile) = @_;
+sub init {
+  my (undef, $config_file) = @_;
 
-  $Config = do {
-    Config::Tiny->read($ConfigFile)
-      or die "bort: couldn't read config '$ConfigFile': $!\n";
+  $config = do {
+    Config::Tiny->read($config_file)
+      or die "bort: couldn't read config '$config_file': $!\n";
   };
 
-  $Config->{_}->{log} //= "stderr";
-  if ($Config->{_}->{log} eq "syslog") {
+  $config->{_}->{log} //= "stderr";
+  if ($config->{_}->{log} eq "syslog") {
     AnyEvent::Log::ctx->log_to_syslog("local1");
   }
   else  {
     AnyEvent::Log::ctx->log_to_warn;
   }
-  $Log = AnyEvent::Log::logger("info");
+  $log = AnyEvent::Log::logger("info");
 
-  $Log->("Loading plugins");
+  $log->("Loading plugins");
 
-  my @SearchPath = ('Bort::Plugin');
-  push @SearchPath, split(/\s+/, $Config->{_}->{plugin_path}) if $Config->{_}->{plugin_path};
-  push @SearchPath, $ENV{BORT_PLUGIN_PATH} if $ENV{BORT_PLUGIN_PATH};
+  my @search_path = ('Bort::Plugin');
+  push @search_path, split(/\s+/, $config->{_}->{plugin_path}) if $config->{_}->{plugin_path};
+  push @search_path, $ENV{BORT_PLUGIN_PATH} if $ENV{BORT_PLUGIN_PATH};
 
   Module::Pluggable->import(
-    search_path => \@SearchPath,
+    search_path => \@search_path,
     require => 1,
   );
-  @Plugins = __PACKAGE__->plugins;
+  @plugins = __PACKAGE__->plugins;
 }
 
-sub Run {
-  for my $Plugin (@Plugins) {
-    if ($Plugin->can("Init")) {
-      $Log->("Initialising plugin $Plugin");
-      $Plugin->Init;
+sub run {
+  for my $plugin (@plugins) {
+    if ($plugin->can("init")) {
+      $log->("Initialising plugin $plugin");
+      $plugin->init;
     }
   }
 
-  my $C = AnyEvent->condvar;
+  my $cv = AnyEvent->condvar;
 
-  $Slack = AnyEvent::SlackRTM->new($Config->{_}->{slack_api_token});
+  $slack = AnyEvent::SlackRTM->new($config->{_}->{slack_api_token});
 
-  $Slack->on(hello => sub {
-    $Log->("Slack says hello!");
-    my $W; $W = AnyEvent->timer(interval => 300, cb => sub {
-      $W if 0;
-      Bort->LoadNames();
+  $slack->on(hello => sub {
+    $log->("Slack says hello!");
+    my $w; $w = AnyEvent->timer(interval => 300, cb => sub {
+      $w if 0;
+      Bort->load_names;
     });
   });
 
-  $Slack->on(finish => sub {
-    $Log->("Slack connection lost, exiting");
-    $C->send;
+  $slack->on(finish => sub {
+    $log->("Slack connection lost, exiting");
+    $cv->send;
   });
 
-  $Slack->on(channel_joined => sub {
-    my $Data = pop @_;
-    $Log->("Joined channel $Data->{channel}->{name}");
-    Bort->LoadNames();
+  $slack->on(channel_joined => sub {
+    my $data = pop @_;
+    $log->("Joined channel $data->{channel}->{name}");
+    Bort->load_names;
   });
 
-  $Slack->on(channel_left => sub {
-    my $Data = pop @_;
-    $Log->("Left channel $Data->{channel}->{name}");
-    Bort->LoadNames();
+  $slack->on(channel_left => sub {
+    my $data = pop @_;
+    $log->("Left channel $data->{channel}->{name}");
+    Bort->load_names;
   });
 
-  $Slack->on(group_joined => sub {
-    my $Data = pop @_;
-    $Log->("Joined group $Data->{group}->{name}");
-    Bort->LoadNames();
+  $slack->on(group_joined => sub {
+    my $data = pop @_;
+    $log->("Joined group $data->{group}->{name}");
+    Bort->load_names;
   });
 
-  $Slack->on(group_left => sub {
-    my $Data = pop @_;
-    $Log->("Left group $Data->{group}->{name}");
-    Bort->LoadNames();
+  $slack->on(group_left => sub {
+    my $data = pop @_;
+    $log->("Left group $data->{group}->{name}");
+    Bort->load_names;
   });
 
-  $Slack->on(message => sub {
-    my $Data = pop @_;
-    return if $Data->{subtype}; # ignore bot chatter, joins, etc
-    return if $Data->{reply_to}; # ignore leftovers from previous connection
-    return if $Data->{user} eq $Slack->metadata->{self}->{id}; # ignore messages from myself
+  $slack->on(message => sub {
+    my $data = pop @_;
+    return if $data->{subtype}; # ignore bot chatter, joins, etc
+    return if $data->{reply_to}; # ignore leftovers from previous connection
+    return if $data->{user} eq $slack->metadata->{self}->{id}; # ignore messages from myself
 
-    Bort->ProcessSlackMessage($Data);
+    Bort->process_slack_message($data);
   });
 
-  $Log->("Connecting to Slack...");
-  $Slack->start;
+  $log->("Connecting to Slack...");
+  $slack->start;
 
-  $C->recv;
+  $cv->recv;
 }
 
 }
@@ -130,86 +130,86 @@ package Bort::Watch {
 
 use Try::Tiny;
 
-my (@ChannelWatches, @DirectWatches, @CommandWatches);
+my (@channel_watches, @direct_watches, @command_watches);
 
-sub RunChannelWatches {
-  my (undef, $Text) = @_;
-  my $Matches = 0;
-  for my $Watch (@ChannelWatches) {
+sub run_channel_watches {
+  my (undef, $text) = @_;
+  my $matches = 0;
+  for my $watch (@channel_watches) {
     next unless
-      (ref $Watch->[0] eq 'Regexp' && $Text =~ m/$Watch->[0]/) ||
-      (ref $Watch->[0] eq 'CODE' && $Watch->[0]->($Text));
+      (ref $watch->[0] eq 'Regexp' && $text =~ m/$watch->[0]/) ||
+      (ref $watch->[0] eq 'CODE' && $watch->[0]->($text));
     try {
-      $Watch->[1]->($Text);
+      $watch->[1]->($text);
     }
     catch {
-      $Log->("$Watch->[2]: channel watch handler died: $_");
-      Bort->Reply(":face_with_head_bandage: channel watch handler died, check the log");
+      $log->("$watch->[2]: channel watch handler died: $_");
+      Bort->reply(":face_with_head_bandage: channel watch handler died, check the log");
     };
-    $Matches++;
+    $matches++;
   }
-  return $Matches;
+  return $matches;
 }
 
-sub RunDirectWatches {
-  my (undef, $Text) = @_;
-  my $Matches = 0;
-  for my $Watch (@DirectWatches) {
+sub run_direct_watches {
+  my (undef, $text) = @_;
+  my $matches = 0;
+  for my $watch (@direct_watches) {
     next unless
-      (ref $Watch->[0] eq 'Regexp' && $Text =~ m/$Watch->[0]/i) ||
-      (ref $Watch->[0] eq 'CODE' && $Watch->[0]->($Text));
+      (ref $watch->[0] eq 'Regexp' && $text =~ m/$watch->[0]/i) ||
+      (ref $watch->[0] eq 'CODE' && $watch->[0]->($text));
     try {
-      $Watch->[1]->($Text);
+      $watch->[1]->($text);
     }
     catch {
-      $Log->("$Watch->[2]: direct watch handler died: $_");
-      Bort->Reply(":face_with_head_bandage: direct watch handler died, check the log");
+      $log->("$watch->[2]: direct watch handler died: $_");
+      Bort->reply(":face_with_head_bandage: direct watch handler died, check the log");
     };
-    $Matches++;
+    $matches++;
   }
-  return $Matches;
+  return $matches;
 }
 
-sub RunCommandWatches {
-  my (undef, $Text) = @_;
-  $Text =~ s{^\s*(.*)\s*$}{$1};
-  $Text =~ s{\s+}{ }g;
-  my ($Command, @Args) = split ' ', $Text;
+sub run_command_watches {
+  my (undef, $text) = @_;
+  $text =~ s{^\s*(.*)\s*$}{$1};
+  $text =~ s{\s+}{ }g;
+  my ($command, @args) = split ' ', $text;
 
-  my $Matches = 0;
-  for my $Watch (@CommandWatches) {
-    next unless lc $Watch->[0] eq lc $Command;
+  my $matches = 0;
+  for my $watch (@command_watches) {
+    next unless lc $watch->[0] eq lc $command;
     try {
-      $Watch->[1]->(@Args);
+      $watch->[1]->(@args);
     }
     catch {
-      $Log->("$Watch->[2]: command watch handler died: $_");
-      Bort->Reply(":face_with_head_bandage: command watch handler died, check the log");
+      $log->("$watch->[2]: command watch handler died: $_");
+      Bort->reply(":face_with_head_bandage: command watch handler died, check the log");
     };
-    $Matches++;
+    $matches++;
   }
-  return $Matches;
+  return $matches;
 }
 
-sub AddChannelWatch {
-  my (undef, $Match, $Callback) = @_;
-  my ($Plugin) = caller =~ m{::([^:]+)$};
-  $Plugin //= caller;
-  push @ChannelWatches, [ $Match, $Callback, $Plugin ];
+sub add_channel_watch {
+  my (undef, $match, $callback) = @_;
+  my ($plugin) = caller =~ m{::([^:]+)$};
+  $plugin //= caller;
+  push @channel_watches, [ $match, $callback, $plugin ];
 }
 
-sub AddDirectWatch {
-  my (undef, $Match, $Callback) = @_;
-  my ($Plugin) = caller =~ m{::([^:]+)$};
-  $Plugin //= caller;
-  push @DirectWatches, [ $Match, $Callback, $Plugin ];
+sub add_direct_watch {
+  my (undef, $match, $callback) = @_;
+  my ($plugin) = caller =~ m{::([^:]+)$};
+  $plugin //= caller;
+  push @direct_watches, [ $match, $callback, $plugin ];
 }
 
-sub AddCommandWatch {
-  my (undef, $Match, $Callback) = @_;
-  my ($Plugin) = caller =~ m{::([^:]+)$};
-  $Plugin //= caller;
-  push @CommandWatches, [ $Match, $Callback, $Plugin ];
+sub add_command_watch {
+  my (undef, $match, $callback) = @_;
+  my ($plugin) = caller =~ m{::([^:]+)$};
+  $plugin //= caller;
+  push @command_watches, [ $match, $callback, $plugin ];
 }
 
 }
@@ -219,223 +219,223 @@ package Bort {
 
 use AnyEvent;
 use AnyEvent::Socket;
-use AnyEvent::HTTP;
+use AnyEvent::HTTP ();
 use Net::DNS::Paranoid;
 use JSON::XS qw(encode_json decode_json);
 use WWW::Form::UrlEncoded::PP qw(build_urlencoded); # XXX workaround crash in ::XS
 
 sub AUTOLOAD {
-  my ($Plugin) = caller =~ m{::([^:]+)$};
-  $Plugin //= caller;
+  my ($plugin) = caller =~ m{::([^:]+)$};
+  $plugin //= caller;
   use vars qw($AUTOLOAD);
-  my ($Method) = $AUTOLOAD =~ m{::([^:]+)$};
-  Bort->Log("$Plugin called nonexistent method $Method");
+  my ($method) = $AUTOLOAD =~ m{::([^:]+)$};
+  Bort->log("$plugin called nonexistent method $method");
   return;
 }
 
-sub AddPluginMethod {
-  my (undef, $Method, $Sub) = @_;
+sub add_plugin_method {
+  my (undef, $method, $sub) = @_;
   no strict 'refs';
-  *{"Bort::$Method"} = $Sub;
+  *{"Bort::$method"} = $sub;
 
-  my ($Plugin) = caller =~ m{::([^:]+)$};
-  $Plugin //= caller;
-  $Log->("$Plugin: added plugin method $Method");
+  my ($plugin) = caller =~ m{::([^:]+)$};
+  $plugin //= caller;
+  $log->("$plugin: added plugin method $method");
 }
 
-sub AddChannelWatch { goto \&Bort::Watch::AddChannelWatch }
-sub AddDirectWatch  { goto \&Bort::Watch::AddDirectWatch }
-sub AddCommandWatch { goto \&Bort::Watch::AddCommandWatch }
+sub add_channel_watch { goto \&Bort::Watch::add_channel_watch }
+sub add_direct_watch  { goto \&Bort::Watch::add_direct_watch }
+sub add_command_watch { goto \&Bort::Watch::add_command_watch }
 
-my ($MyUser, $MyUserName);
-my (%ChannelNames, %UserNames);
-my (%ChannelByName, %UserByName);
-my %UserData;
+my ($my_user, $my_user_name);
+my (%channel_names, %user_names);
+my (%channel_by_name, %user_by_name);
+my %user_data;
 
-sub LoadNames {
-  ($MyUser, $MyUserName) = @{$Slack->metadata->{self}}{qw(id name)};
-  $Log->("Starting name/channels update...");
-  Bort->SlackCall("groups.list", sub {
-    my %GroupNames = map { $_->{id} => $_->{name} } @{shift->{groups}};
-    Bort->SlackCall("channels.list", sub {
-      %ChannelNames = (%GroupNames, map { $_->{id} => $_->{name} } @{shift->{channels}});
-      %ChannelByName = reverse %ChannelNames;
-      $Log->(join(' ', scalar keys %ChannelByName, "channels loaded"));
+sub load_names {
+  ($my_user, $my_user_name) = @{$slack->metadata->{self}}{qw(id name)};
+  $log->("Starting name/channels update...");
+  Bort->slack_call("groups.list", sub {
+    my %group_names = map { $_->{id} => $_->{name} } @{shift->{groups}};
+    Bort->slack_call("channels.list", sub {
+      %channel_names = (%group_names, map { $_->{id} => $_->{name} } @{shift->{channels}});
+      %channel_by_name = reverse %channel_names;
+      $log->(join(' ', scalar keys %channel_by_name, "channels loaded"));
     });
   });
-  Bort->SlackCall("users.list", sub {
-    my $Members = shift->{members};
-    %UserData = map { $_->{id} => $_ } @$Members;
-    %UserNames = map { $_->{id} => $_->{name} } @$Members;
-    %UserByName = reverse %UserNames;
-    $Log->(join(' ', scalar keys %UserByName, "users loaded"));
-    $MyUserName = $UserNames{$MyUser};
-    $Log->("My name is $MyUserName [$MyUser]");
+  Bort->slack_call("users.list", sub {
+    my $members = shift->{members};
+    %user_data = map { $_->{id} => $_ } @$members;
+    %user_names = map { $_->{id} => $_->{name} } @$members;
+    %user_by_name = reverse %user_names;
+    $log->(join(' ', scalar keys %user_by_name, "users loaded"));
+    $my_user_name = $user_names{$my_user};
+    $log->("My name is $my_user_name [$my_user]");
   });
 }
 
-my ($CurrentChannel, $CurrentUser, $CurrentMessageData);
+my ($current_channel, $current_user, $current_message_data);
 
-sub MyUser    { $MyUser };
-sub Channel   { $CurrentChannel }
-sub ChannelName { shift; my $Channel = $_[-1] // $CurrentChannel; $ChannelNames{$Channel} // $Channel }
-sub User    { $CurrentUser }
-sub UserName  { shift; my $User = $_[-1] // $CurrentUser; $UserNames{$User} // $User }
-sub MessageId   { $CurrentMessageData->{ts} };
+sub my_user      { $my_user }
+sub channel      { $current_channel }
+sub channel_name { shift; my $channel = $_[-1] // $current_channel; $channel_names{$channel} // $channel }
+sub user         { $current_user }
+sub user_name    { shift; my $user = $_[-1] // $current_user; $user_names{$user} // $user }
+sub message_id   { $current_message_data->{ts} };
 
-sub MyUserName  { $MyUserName }
-sub ChannelByName { $ChannelByName{$_[-1]} // $_[-1] };
-sub UserByName  { $UserByName{$_[-1]} // $_[-1] };
+sub my_user_name    { $my_user_name }
+sub channel_by_name { $channel_by_name{$_[-1]} // $_[-1] };
+sub user_by_name    { $user_by_name{$_[-1]} // $_[-1] };
 
-sub UserData { shift; my $User = $_[-1] // $CurrentUser; $UserData{$User} }
+sub user_data { shift; my $user = $_[-1] // $current_user; $user_data{$user} }
 
-sub Log {
-  my (undef, @Msg) = @_;
-  my ($Plugin) = caller =~ m{::([^:]+)$};
-  $Plugin //= caller;
+sub log {
+  my (undef, @msg) = @_;
+  my ($plugin) = caller =~ m{::([^:]+)$};
+  $plugin //= caller;
 
-  my $NameMatch = join '|', map { "\Q$_\E" } (keys %ChannelNames, keys %UserNames);
-  my $NameRE = qr/$NameMatch/;
-  $Log->("$Plugin: $_") for map { s{\b($NameRE)\b}{$ChannelNames{$1} // $UserNames{$1} // $1}ger } @Msg;
+  my $name_match = join '|', map { "\Q$_\E" } (keys %channel_names, keys %user_names);
+  my $name_re = qr/$name_match/;
+  $log->("$plugin: $_") for map { s{\b($name_re)\b}{$channel_names{$1} // $user_names{$1} // $1}ger } @msg;
 }
 
-sub Config {
-  my ($Plugin) = caller =~ m{^^Bort::Plugin::([^:]+)$};
-  $Plugin //= caller;
+sub config {
+  my ($plugin) = caller =~ m{^^Bort::Plugin::([^:]+)$};
+  $plugin //= caller;
 
-  return $Config->{$Plugin};
+  return $config->{$plugin};
 }
 
-sub Send {
-  my $Attachments;
-  $Attachments = pop @_ if ref $_[-1];
+sub send {
+  my $attachments;
+  $attachments = pop @_ if ref $_[-1];
 
-  my (undef, $To, @Msg) = @_;
+  my (undef, $to, @msg) = @_;
 
-  Bort->SlackCall("chat.postMessage",
+  Bort->slack_call("chat.postMessage",
     as_user      => 1,
-    channel      => $To,
-    text         => join("\n", grep { defined } @Msg),
-    $Attachments ? (attachments => encode_json($Attachments)) : (),
+    channel      => $to,
+    text         => join("\n", grep { defined } @msg),
+    $attachments ? (attachments => encode_json($attachments)) : (),
     unfurl_links => "false",
   );
 }
 
-sub SendDirect {
-  my $Attachments;
-  $Attachments = pop @_ if ref $_[-1];
-  my (undef, $Channel, $User, @Msg) = @_;
-  if (exists $ChannelNames{$Channel}) {
-    Bort->Send($Channel, "$UserNames{$User}: ".(shift(@Msg) // ''), @Msg, $Attachments);
+sub send_direct {
+  my $attachments;
+  $attachments = pop @_ if ref $_[-1];
+  my (undef, $channel, $user, @msg) = @_;
+  if (exists $channel_names{$channel}) {
+    Bort->send($channel, "$user_names{$user}: ".(shift(@msg) // ''), @msg, $attachments);
   }
   else {
-    Bort->Send($Channel, @Msg, $Attachments);
+    Bort->send($channel, @msg, $attachments);
   }
 }
 
-sub Say {
-  my (undef, @Msg) = @_;
-  Bort->Send(Bort->Channel, @Msg);
+sub say {
+  my (undef, @msg) = @_;
+  Bort->send($current_channel, @msg);
 }
 
-sub Reply {
-  my (undef, @Msg) = @_;
-  Bort->SendDirect(Bort->Channel, Bort->User, @Msg);
+sub reply {
+  my (undef, @msg) = @_;
+  Bort->send_direct($current_channel, $current_user, @msg);
 }
 
-sub ReplyPrivate {
-  my (undef, @Msg) = @_;
-  Bort->SlackCall("im.open", user => Bort->User, sub {
-    my $Channel = shift->{channel}->{id};
-    Bort->Send($Channel, @Msg);
+sub reply_private {
+  my (undef, @msg) = @_;
+  Bort->slack_call("im.open", user => $current_user, sub {
+    my $channel = shift->{channel}->{id};
+    Bort->send($channel, @msg);
   });
 }
 
-# Bort->HttpRequest(...)
+# Bort->http_request(...)
 # Same args as AnyEvent::HTTP::http_request
 # Fills in some args if not provided:
 #   headers->user-agent: bort/0.01
 #   cookie_jar: in-memory cookie store for whole bot
 #   tcp_connect: "paranoid" connects, fail against internal hosts
-sub HttpRequest {
-  my $Callback = sub {};
-  $Callback = pop @_ if ref $_[-1] eq 'CODE';
-  my (undef, $Method, $URL, %Args) = @_;
+sub http_request {
+  my $callback = sub {};
+  $callback = pop @_ if ref $_[-1] eq 'CODE';
+  my (undef, $method, $url, %args) = @_;
 
-  state $CookieJar = {};
-  state $DNS = do {
-    my $DNS = Net::DNS::Paranoid->new;
-    $DNS->blocked_hosts(qr/^[a-z0-9-]+$/i, qr/\.internal$/i);
-    $DNS
+  state $cookie_jar = {};
+  state $dns = do {
+    my $dns = Net::DNS::Paranoid->new;
+    $dns->blocked_hosts(qr/^[a-z0-9-]+$/i, qr/\.internal$/i);
+    $dns
   };
 
-  $Args{headers} //= {};
-  $Args{headers}->{"user-agent"} //= "bort/0.01";
+  $args{headers} //= {};
+  $args{headers}->{"user-agent"} //= "bort/0.01";
 
-  $Args{cookie_jar} //= $CookieJar;
+  $args{cookie_jar} //= $cookie_jar;
 
-  $Args{tcp_connect} //= sub {
-    my (undef, $Error) = $DNS->resolve($_[0]);
-    if ($Error) {
-      Bort->Log("error resolving $_[0]: $Error");
+  $args{tcp_connect} //= sub {
+    my (undef, $error) = $dns->resolve($_[0]);
+    if ($error) {
+      Bort->log("error resolving $_[0]: $error");
       return;
     }
     goto \&tcp_connect;
   };
 
-  $URL = "$URL"; # stringify URI objects
+  $url = "$url"; # stringify URI objects
 
-  Bort->Log("doing $Method request to $URL") unless $Args{_quiet};
+  Bort->log("doing $method request to $url") unless $args{_quiet};
 
-  http_request($Method => $URL, %Args, sub {
-    my ($Body, $Hdr) = @_;
-    unless ($Hdr->{Status} =~ m/^2/) {
-      Bort->Log("request failed: $Hdr->{Status} $Hdr->{Reason}");
+  AnyEvent::HTTP::http_request($method => $url, %args, sub {
+    my ($body, $headers) = @_;
+    unless ($headers->{Status} =~ m/^2/) {
+      Bort->log("request failed: $headers->{Status} $headers->{Reason}");
     }
-    $Callback->($Body, $Hdr);
+    $callback->($body, $headers);
   });
 }
 
-sub SlackCall {
-  my $Callback = sub {};
-  $Callback = pop @_ if ref $_[-1] eq 'CODE';
-  my (undef, $Method, %Args) = @_;
+sub slack_call {
+  my $callback = sub {};
+  $callback = pop @_ if ref $_[-1] eq 'CODE';
+  my (undef, $method, %args) = @_;
 
-  $Args{token} = $Config->{_}->{slack_api_token};
+  $args{token} = $config->{_}->{slack_api_token};
 
-  my $URL = "https://slack.com/api/$Method";
+  my $url = "https://slack.com/api/$method";
 
-  Bort->HttpRequest(
-    POST => $URL,
-    body => build_urlencoded(\%Args),
+  Bort->http_request(
+    POST => $url,
+    body => build_urlencoded(\%args),
     headers => {
       "content-type" => "application/x-www-form-urlencoded",
     },
     _quiet => 1,
     sub {
       # XXX error checking
-      my $Data = decode_json(shift);
-      $Callback->($Data);
+      my $data = decode_json(shift);
+      $callback->($data);
     }
   );
 }
 
-sub ProcessSlackMessage {
-  my (undef, $Data) = @_;
+sub process_slack_message {
+  my (undef, $data) = @_;
 
-  my $Channel = $Data->{channel};
-  my $User = $Data->{user};
+  my $channel = $data->{channel};
+  my $user = $data->{user};
 
-  $CurrentChannel = $Channel;
-  $CurrentUser = $User;
-  $CurrentMessageData = $Data;
+  $current_channel = $channel;
+  $current_user = $user;
+  $current_message_data = $data;
 
-  my ($Name, $Text) = $Data->{text} =~ m/^(${\Bort->MyUserName}).?\s*(.+)/i;
-  unless (defined $Name) {
-    (my $User, $Text) = $Data->{text} =~ m/^<@([^>]+)>.?\s*(.+)/i;
-    $Name = $UserNames{$User} if defined $User;
+  my ($name, $text) = $data->{text} =~ m/^(${\Bort->my_user_name}).?\s*(.+)/i;
+  unless (defined $name) {
+    (my $user, $text) = $data->{text} =~ m/^<@([^>]+)>.?\s*(.+)/i;
+    $name = $user_names{$user} if defined $user;
   }
-  $Text = $Data->{text} unless defined $Text;
+  $text = $data->{text} unless defined $text;
 
   # XXX hardcoded, really?
   my @unknown_responses = (
@@ -452,28 +452,28 @@ sub ProcessSlackMessage {
     "But it's cold outside and I'm frightened!",
   );
 
-  if ((defined $Name && $Name eq Bort->MyUserName) || !exists $ChannelNames{$Channel}) {
-    my $Matches =
-      Bort::Watch->RunDirectWatches($Text) +
-      Bort::Watch->RunCommandWatches($Text);
-    Bort->Reply(":thinking_face: $unknown_responses[int(rand(scalar @unknown_responses))]") unless $Matches;
+  if ((defined $name && $name eq $my_user_name) || !exists $channel_names{$channel}) {
+    my $matches =
+      Bort::Watch->run_direct_watches($text) +
+      Bort::Watch->run_command_watches($text);
+    Bort->reply(":thinking_face: $unknown_responses[int(rand(scalar @unknown_responses))]") unless $matches;
   }
 
-  Bort::Watch->RunChannelWatches($Data->{text});
+  Bort::Watch->run_channel_watches($data->{text});
 }
 
 # https://api.slack.com/docs/formatting#how_to_display_formatted_messages
-sub FlattenSlackText {
-  my (undef, $Text) = @_;
-  $Text =~ s/<[^|]+\|([^>]+)>/$1/g;
+sub flatten_slack_text {
+  my (undef, $text) = @_;
+  $text =~ s/<[^|]+\|([^>]+)>/$1/g;
   # XXX #C channel ref
   # XXX @U user ref
   # XXX ! special
-  $Text =~ s/<([^>]+)>/$1/g;
-  $Text =~ s/&lt;/</g;
-  $Text =~ s/&gt;/>/g;
-  $Text =~ s/&amp;/&/g;
-  return $Text;
+  $text =~ s/<([^>]+)>/$1/g;
+  $text =~ s/&lt;/</g;
+  $text =~ s/&gt;/>/g;
+  $text =~ s/&amp;/&/g;
+  return $text;
 }
 
 }
