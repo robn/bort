@@ -291,7 +291,7 @@ sub user_data { shift; my $user = $_[-1] // $current_user; $user_data{$user} }
 
 sub log {
   my (undef, @msg) = @_;
-  my ($plugin) = caller =~ m{::([^:]+)$};
+  my ($plugin) = caller =~ m{^Bort::Plugin::([^:]+)$};
   $plugin //= caller;
 
   my $name_match = join '|', map { "\Q$_\E" } (keys %channel_names, keys %user_names);
@@ -300,7 +300,7 @@ sub log {
 }
 
 sub config {
-  my ($plugin) = caller =~ m{^^Bort::Plugin::([^:]+)$};
+  my ($plugin) = caller =~ m{^Bort::Plugin::([^:]+)$};
   $plugin //= caller;
 
   return $config->{$plugin};
