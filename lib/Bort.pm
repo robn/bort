@@ -223,6 +223,7 @@ use AnyEvent::HTTP ();
 use Net::DNS::Paranoid;
 use JSON::XS qw(encode_json decode_json);
 use WWW::Form::UrlEncoded::PP qw(build_urlencoded); # XXX workaround crash in ::XS
+use Text::SlackEmoji;
 
 sub AUTOLOAD {
   my ($plugin) = caller =~ m{::([^:]+)$};
@@ -464,7 +465,11 @@ sub process_slack_message {
 # https://api.slack.com/docs/formatting#how_to_display_formatted_messages
 sub flatten_slack_text {
   my (undef, $text) = @_;
+
+  my $emoji = Text::SlackEmoji->emoji_map;
+
   $text =~ s/<[^|]+\|([^>]+)>/$1/g;
+  $text =~ s{:([-+a-z0-9_]+):}{$emoji->{$1} // ":$1:"}ge;
   # XXX #C channel ref
   # XXX @U user ref
   # XXX ! special
