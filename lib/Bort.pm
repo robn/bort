@@ -470,13 +470,14 @@ sub flatten_slack_text {
 
   $text =~ s/<[^|]+\|([^>]+)>/$1/g;
   $text =~ s{:([-+a-z0-9_]+):}{$emoji->{$1} // ":$1:"}ge;
-  # XXX #C channel ref
-  # XXX @U user ref
+  $text =~ s{#(C\w{8})}{'#'.Bort->channel_name($1)}ge;
+  $text =~ s{\@(U\w{8})}{'@'.Bort->user_name($1)}ge;
   # XXX ! special
   $text =~ s/<([^>]+)>/$1/g;
   $text =~ s/&lt;/</g;
   $text =~ s/&gt;/>/g;
   $text =~ s/&amp;/&/g;
+
   return $text;
 }
 
