@@ -430,9 +430,9 @@ sub process_slack_message {
   $current_user = $user;
   $current_message_data = $data;
 
-  my ($name, $text) = $data->{text} =~ m/^(${\Bort->my_user_name}).?\s*(.+)/i;
+  my ($name, $text) = $data->{text} =~ m/^(${\Bort->my_user_name})\s*[,:;\s]\s*(.+)/i;
   unless (defined $name) {
-    (my $user, $text) = $data->{text} =~ m/^<@([^>]+)>.?\s*(.+)/i;
+    (my $user, $text) = $data->{text} =~ m/^<@([^>]+)>\s*[,:;\s]\s*(.+)/i;
     $name = $user_names{$user} if defined $user;
   }
   $text = $data->{text} unless defined $text;
