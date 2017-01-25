@@ -133,18 +133,18 @@ use Try::Tiny;
 my (@channel_watches, @direct_watches, @command_watches);
 
 sub run_channel_watches {
-  my (undef, $text) = @_;
+  my (undef, $ctx, $text) = @_;
   my $matches = 0;
   for my $watch (@channel_watches) {
     next unless
       (ref $watch->[0] eq 'Regexp' && $text =~ m/$watch->[0]/) ||
       (ref $watch->[0] eq 'CODE' && $watch->[0]->($text));
     try {
-      $watch->[1]->($text);
+      $watch->[1]->($ctx, $text);
     }
     catch {
       $log->("$watch->[2]: channel watch handler died: $_");
-      Bort->reply(":face_with_head_bandage: channel watch handler died, check the log");
+      $ctx->reply(":face_with_head_bandage: channel watch handler died, check the log");
     };
     $matches++;
   }
@@ -152,18 +152,18 @@ sub run_channel_watches {
 }
 
 sub run_direct_watches {
-  my (undef, $text) = @_;
+  my (undef, $ctx, $text) = @_;
   my $matches = 0;
   for my $watch (@direct_watches) {
     next unless
       (ref $watch->[0] eq 'Regexp' && $text =~ m/$watch->[0]/i) ||
       (ref $watch->[0] eq 'CODE' && $watch->[0]->($text));
     try {
-      $watch->[1]->($text);
+      $watch->[1]->($ctx, $text);
     }
     catch {
       $log->("$watch->[2]: direct watch handler died: $_");
-      Bort->reply(":face_with_head_bandage: direct watch handler died, check the log");
+      $ctx->reply(":face_with_head_bandage: direct watch handler died, check the log");
     };
     $matches++;
   }
@@ -171,7 +171,7 @@ sub run_direct_watches {
 }
 
 sub run_command_watches {
-  my (undef, $text) = @_;
+  my (undef, $ctx, $text) = @_;
   $text =~ s{^\s*(.*)\s*$}{$1};
   $text =~ s{\s+}{ }g;
   my ($command, @args) = split ' ', $text;
@@ -180,11 +180,11 @@ sub run_command_watches {
   for my $watch (@command_watches) {
     next unless lc $watch->[0] eq lc $command;
     try {
-      $watch->[1]->(@args);
+      $watch->[1]->($ctx, @args);
     }
     catch {
       $log->("$watch->[2]: command watch handler died: $_");
-      Bort->reply(":face_with_head_bandage: command watch handler died, check the log");
+      $ctx->reply(":face_with_head_bandage: command watch handler died, check the log");
     };
     $matches++;
   }
@@ -210,6 +210,44 @@ sub add_command_watch {
   my ($plugin) = caller =~ m{::([^:]+)$};
   $plugin //= caller;
   push @command_watches, [ $match, $callback, $plugin ];
+}
+
+}
+
+
+package Bort::MessageContext {
+
+sub new {
+  my ($class, %args) = @_;
+  return bless \%args, $class;
+}
+
+sub channel { shift->{channel} }
+sub user    { shift->{user} }
+sub data    { shift->{data} }
+
+sub channel_name { Bort->channel_name(shift->channel) }
+sub user_name    { Bort->user_name(shift->user) }
+sub user_data    { Bort->user_data(shift->user) }
+
+sub message_id { shift->data->{ts} }
+
+sub say {
+  my ($self, @msg) = @_;
+  Bort->send($self->channel, @msg);
+}
+
+sub reply {
+  my ($self, @msg) = @_;
+  Bort->send_direct($self->channel, $self->user, @msg);
+}
+
+sub reply_private {
+  my ($self, @msg) = @_;
+  Bort->slack_call("im.open", user => $self->user, sub {
+    my $channel = shift->{channel}->{id};
+    Bort->send($channel, @msg);
+  });
 }
 
 }
@@ -244,6 +282,16 @@ sub add_plugin_method {
   $log->("$plugin: added plugin method $method");
 }
 
+sub add_context_method {
+  my (undef, $method, $sub) = @_;
+  no strict 'refs';
+  *{"Bort::MessageContext::$method"} = $sub;
+
+  my ($plugin) = caller =~ m{::([^:]+)$};
+  $plugin //= caller;
+  $log->("$plugin: added context method $method");
+}
+
 sub add_channel_watch { goto \&Bort::Watch::add_channel_watch }
 sub add_direct_watch  { goto \&Bort::Watch::add_direct_watch }
 sub add_command_watch { goto \&Bort::Watch::add_command_watch }
@@ -275,20 +323,15 @@ sub load_names {
   });
 }
 
-my ($current_channel, $current_user, $current_message_data);
-
 sub my_user      { $my_user }
-sub channel      { $current_channel }
-sub channel_name { shift; my $channel = $_[-1] // $current_channel; $channel_names{$channel} // $channel }
-sub user         { $current_user }
-sub user_name    { shift; my $user = $_[-1] // $current_user; $user_names{$user} // $user }
-sub message_id   { $current_message_data->{ts} };
+sub channel_name { shift; my $channel = $_[-1]; $channel_names{$channel} // $channel }
+sub user_name    { shift; my $user = $_[-1]; $user_names{$user} // $user }
 
 sub my_user_name    { $my_user_name }
 sub channel_by_name { $channel_by_name{$_[-1]} // $_[-1] };
 sub user_by_name    { $user_by_name{$_[-1]} // $_[-1] };
 
-sub user_data { shift; my $user = $_[-1] // $current_user; $user_data{$user} }
+sub user_data { shift; my $user = $_[-1]; $user_data{$user} }
 
 sub log {
   my (undef, @msg) = @_;
@@ -332,24 +375,6 @@ sub send_direct {
   else {
     Bort->send($channel, @msg, $attachments);
   }
-}
-
-sub say {
-  my (undef, @msg) = @_;
-  Bort->send($current_channel, @msg);
-}
-
-sub reply {
-  my (undef, @msg) = @_;
-  Bort->send_direct($current_channel, $current_user, @msg);
-}
-
-sub reply_private {
-  my (undef, @msg) = @_;
-  Bort->slack_call("im.open", user => $current_user, sub {
-    my $channel = shift->{channel}->{id};
-    Bort->send($channel, @msg);
-  });
 }
 
 # Bort->http_request(...)
@@ -426,9 +451,11 @@ sub process_slack_message {
   my $channel = $data->{channel};
   my $user = $data->{user};
 
-  $current_channel = $channel;
-  $current_user = $user;
-  $current_message_data = $data;
+  my $ctx = Bort::MessageContext->new(
+    channel => $channel,
+    user    => $user,
+    data    => $data,
+  );
 
   my ($name, $text) = $data->{text} =~ m/^(${\Bort->my_user_name})\s*[,:;\s]\s*(.+)/i;
   unless (defined $name) {
@@ -454,12 +481,12 @@ sub process_slack_message {
 
   if ((defined $name && $name eq $my_user_name) || !exists $channel_names{$channel}) {
     my $matches =
-      Bort::Watch->run_direct_watches($text) +
-      Bort::Watch->run_command_watches($text);
-    Bort->reply(":thinking_face: $unknown_responses[int(rand(scalar @unknown_responses))]") unless $matches;
+      Bort::Watch->run_direct_watches($ctx, $text) +
+      Bort::Watch->run_command_watches($ctx, $text);
+    $ctx->reply(":thinking_face: $unknown_responses[int(rand(scalar @unknown_responses))]") unless $matches;
   }
 
-  Bort::Watch->run_channel_watches($data->{text});
+  Bort::Watch->run_channel_watches($ctx, $data->{text});
 }
 
 # https://api.slack.com/docs/formatting#how_to_display_formatted_messages

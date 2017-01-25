@@ -14,7 +14,7 @@ Bort->add_plugin_method(add_help => sub {
 
 sub init {
   Bort->add_command_watch(help => sub {
-    my ($topic) = @_;
+    my ($ctx, $topic) = @_;
 
     unless (defined $topic) {
       state $top_help = [ map {
@@ -22,16 +22,16 @@ sub init {
         s/%topics%/join ", ", sort(keys %help_text)/er;
       } <DATA> ];
 
-      Bort->reply([{ text => join("\n", @$top_help), fallback => $top_help->[0] }]);
+      $ctx->reply([{ text => join("\n", @$top_help), fallback => $top_help->[0] }]);
       return;
     }
 
     $topic = lc $topic;
     if (exists $help_text{$topic}) {
-      Bort->reply([{ text => join("\n", @{$help_text{$topic}}), fallback => $help_text{$topic}->[0] }]);
+      $ctx->reply([{ text => join("\n", @{$help_text{$topic}}), fallback => $help_text{$topic}->[0] }]);
     }
     else {
-      Bort->reply("no help for '$topic'");
+      $ctx->reply("no help for '$topic'");
     }
   });
 
