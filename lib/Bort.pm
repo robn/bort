@@ -76,6 +76,7 @@ sub run {
     my $w; $w = AnyEvent->timer(interval => 300, cb => sub {
       $w if 0;
       Bort->load_names;
+      Bort->load_team;
     });
   });
 
@@ -300,6 +301,7 @@ my ($my_user, $my_user_name);
 my (%channel_names, %user_names);
 my (%channel_by_name, %user_by_name);
 my %user_data;
+my %team_data;
 
 sub load_names {
   ($my_user, $my_user_name) = @{$slack->metadata->{self}}{qw(id name)};
@@ -323,6 +325,14 @@ sub load_names {
   });
 }
 
+sub load_team {
+  $log->("Loading team info...");
+  Bort->slack_call("team.info", sub {
+    %team_data = %{shift->{team}};
+  });
+}
+
+
 sub my_user      { $my_user }
 sub channel_name { shift; my $channel = $_[-1]; $channel_names{$channel} // $channel }
 sub user_name    { shift; my $user = $_[-1]; $user_names{$user} // $user }
@@ -332,6 +342,8 @@ sub channel_by_name { $channel_by_name{$_[-1]} // $_[-1] };
 sub user_by_name    { $user_by_name{$_[-1]} // $_[-1] };
 
 sub user_data { shift; my $user = $_[-1]; $user_data{$user} }
+
+sub team { \%team_data };
 
 sub log {
   my (undef, @msg) = @_;
