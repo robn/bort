@@ -232,6 +232,14 @@ sub user_name    { Bort->user_name(shift->user) }
 sub user_data    { Bort->user_data(shift->user) }
 
 sub message_id { shift->data->{ts} }
+sub message_url {
+  my ($self) = @_;
+  sprintf("https://%s.slack.com/archives/%s/p%s%s",
+    Bort->team->{domain},
+    $self->channel_name,
+    split('\.', $self->message_id),
+  );
+}
 
 sub say {
   my ($self, @msg) = @_;
