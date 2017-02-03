@@ -113,7 +113,10 @@ sub run {
     my $data = pop @_;
     return if $data->{subtype}; # ignore bot chatter, joins, etc
     return if $data->{reply_to}; # ignore leftovers from previous connection
-    return if $data->{user} eq $slack->metadata->{self}->{id}; # ignore messages from myself
+
+    # ignore messages from bots
+    my $userdata = Bort->user_data($data->{user});
+    return if $userdata && $userdata->{is_bot};
 
     Bort->process_slack_message($data);
   });
