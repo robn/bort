@@ -449,7 +449,8 @@ sub slack_call {
   $callback = pop @_ if ref $_[-1] eq 'CODE';
   my (undef, $method, %args) = @_;
 
-  $args{token} = $config->{_}->{slack_api_token};
+  my $privileged = delete $args{privileged};
+  $args{token} = $privileged ? $config->{_}->{slack_privileged_api_token} : $config->{_}->{slack_api_token};
 
   my $url = "https://slack.com/api/$method";
 
