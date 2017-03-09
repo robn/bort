@@ -472,6 +472,8 @@ sub slack_call {
 sub process_slack_message {
   my (undef, $data) = @_;
 
+  return unless %user_names && %channel_names;
+
   my $channel = $data->{channel};
   my $user = $data->{user};
 
