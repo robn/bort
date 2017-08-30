@@ -245,8 +245,14 @@ sub message_url {
 }
 
 sub say {
+  my $attachments;
+  $attachments = pop @_ if ref $_[-1];
   my ($self, @msg) = @_;
-  Bort->send($self->channel, @msg);
+  Bort->send(
+    to       => $self->channel,
+    messages => \@msg,
+    $attachments ? (attachments => $attachments) : (),
+  );
 }
 
 sub reply {
@@ -258,7 +264,10 @@ sub reply_private {
   my ($self, @msg) = @_;
   Bort->slack_call("im.open", user => $self->user, sub {
     my $channel = shift->{channel}->{id};
-    Bort->send($channel, @msg);
+    Bort->send(
+      to       => $channel,
+      messages => \@msg
+    );
   });
 }
 
@@ -374,17 +383,16 @@ sub config {
 }
 
 sub send {
-  my $attachments;
-  $attachments = pop @_ if ref $_[-1];
+  my (undef, %args) = @_;
 
-  my (undef, $to, @msg) = @_;
+  my $text = join "\n", grep { defined } @{$args{messages} // []};
 
   Bort->slack_call("chat.postMessage",
     as_user      => 1,
-    channel      => $to,
-    text         => join("\n", grep { defined } @msg),
-    $attachments ? (attachments => encode_json($attachments)) : (),
+    channel      => $args{to},
+    text         => $text,
     unfurl_links => "false",
+    $args{attachments} ? (attachments => encode_json($args{attachments})) : (),
   );
 }
 
@@ -393,10 +401,21 @@ sub send_direct {
   $attachments = pop @_ if ref $_[-1];
   my (undef, $channel, $user, @msg) = @_;
   if (exists $channel_names{$channel}) {
-    Bort->send($channel, "$user_names{$user}: ".(shift(@msg) // ''), @msg, $attachments);
+    Bort->send(
+      to          => $channel,
+      messages    => [
+        "$user_names{$user}: ".(shift(@msg) // ''),
+        @msg,
+      ],
+      attachments => $attachments
+    );
   }
   else {
-    Bort->send($channel, @msg, $attachments);
+    Bort->send(
+      to          => $channel,
+      messages    => \@msg,
+      attachments => $attachments
+    );
   }
 }
 
