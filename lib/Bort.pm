@@ -226,9 +226,11 @@ sub new {
   return bless \%args, $class;
 }
 
-sub channel { shift->{channel} }
-sub user    { shift->{user} }
-sub data    { shift->{data} }
+sub channel           { shift->{channel} }
+sub user              { shift->{user} }
+sub thread            { shift->{thread} }
+sub thread_broadcast  { shift->{thread_broadcast} }
+sub data              { shift->{data} }
 
 sub channel_name { Bort->channel_name(shift->channel) }
 sub user_name    { Bort->user_name(shift->user) }
@@ -249,15 +251,19 @@ sub say {
   $attachments = pop @_ if ref $_[-1];
   my ($self, @msg) = @_;
   Bort->send(
-    to       => $self->channel,
-    messages => \@msg,
+    to               => $self->channel,
+    messages         => \@msg,
+    thread           => $self->thread,
+    thread_broadcast => $self->thread_broadcast,
     $attachments ? (attachments => $attachments) : (),
   );
 }
 
 sub reply {
+  my $attachments;
+  $attachments = pop @_ if ref $_[-1];
   my ($self, @msg) = @_;
-  Bort->send_direct($self->channel, $self->user, @msg);
+  $self->say(Bort->user_name($self->user) . ': ' . (shift(@msg) // ''), @msg, $attachments // ());
 }
 
 sub reply_private {
@@ -393,6 +399,10 @@ sub send {
     text         => $text,
     unfurl_links => "false",
     $args{attachments} ? (attachments => encode_json($args{attachments})) : (),
+    $args{thread} ? (
+      thread_ts       => $args{thread},
+      reply_broadcast => $args{thread_broadcast} ? "true" : "false",
+    ) : (),
   );
 }
 
@@ -496,10 +506,15 @@ sub process_slack_message {
   my $channel = $data->{channel};
   my $user = $data->{user};
 
+  my $thread           = $data->{thread_ts};
+  my $thread_broadcast = !!$data->{reply_broadcast};
+
   my $ctx = Bort::MessageContext->new(
-    channel => $channel,
-    user    => $user,
-    data    => $data,
+    channel           => $channel,
+    user              => $user,
+    thread            => $thread,
+    thread_broadcast  => $thread_broadcast,
+    data              => $data,
   );
 
   my ($name, $text) = $data->{text} =~ m/^(${\Bort->my_user_name})\s*[,:;\s]\s*(.+)/i;
