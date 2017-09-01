@@ -144,9 +144,7 @@ sub run_channel_watches {
       (ref $watch->[0] eq 'Regexp' && $text =~ m/$watch->[0]/) ||
       (ref $watch->[0] eq 'CODE' && $watch->[0]->($text));
     try {
-      if (ref $watch->[1] eq 'CODE') {
-        $watch->[1]->($ctx, $text);
-      }
+      $watch->[1]->($ctx, $text);
     }
     catch {
       $log->("$watch->[2]: channel watch handler died: $_");
@@ -201,21 +199,27 @@ sub add_channel_watch {
   my (undef, $match, $callback) = @_;
   my ($plugin) = caller =~ m{::([^:]+)$};
   $plugin //= caller;
-  push @channel_watches, [ $match, $callback, $plugin ];
+  ref $callback eq 'CODE'
+    ? push @channel_watches, [ $match, $callback, $plugin ]
+    : Bort->log("channel watch failed: callback must be CODE ref!");
 }
 
 sub add_direct_watch {
   my (undef, $match, $callback) = @_;
   my ($plugin) = caller =~ m{::([^:]+)$};
   $plugin //= caller;
-  push @direct_watches, [ $match, $callback, $plugin ];
+  ref $callback eq 'CODE'
+    ? push @direct_watches, [ $match, $callback, $plugin ]
+    : Bort->log("direct watch failed: callback must be CODE ref!");
 }
 
 sub add_command_watch {
   my (undef, $match, $callback) = @_;
   my ($plugin) = caller =~ m{::([^:]+)$};
   $plugin //= caller;
-  push @command_watches, [ $match, $callback, $plugin ];
+  ref $callback eq 'CODE'
+    ? push @command_watches, [ $match, $callback, $plugin ]
+    : Bort->log("command watch failed: callback must be CODE ref!");
 }
 
 }
@@ -362,19 +366,14 @@ sub load_team {
 
 
 sub my_user      { $my_user }
-sub channel_name { shift; my $channel = $_[-1]; $channel_names{$channel} // 0 }
-sub user_name    { shift; my $user = $_[-1]; $user_names{$user} // 0 }
+sub channel_name { shift; my $channel = $_[-1]; $channel_names{$channel} // () }
+sub user_name    { shift; my $user = $_[-1]; $user_names{$user} // () }
 
 sub my_user_name    { $my_user_name }
-sub channel_by_name { $channel_by_name{$_[-1]} // 0 };
-sub user_by_name    { $user_by_name{$_[-1]} // 0 };
+sub channel_by_name { $channel_by_name{$_[-1]} // () };
+sub user_by_name    { $user_by_name{$_[-1]} // () };
 
-sub user_data {
-  shift;
-  my $user = $_[-1];
-  # Naive user_id validation
-  $user =~ /^U[0-9A-Z]+/ ? $user_data{$user} : 0
-}
+sub user_data { shift; my $user = $_[-1]; $user_data{$user} // () }
 
 sub team { \%team_data };
 
