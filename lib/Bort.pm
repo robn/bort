@@ -371,7 +371,13 @@ sub user_name    { shift; my $user = $_[-1]; $user_names{$user} // () }
 
 sub my_user_name    { $my_user_name }
 sub channel_by_name { $channel_by_name{$_[-1]} // () };
-sub user_by_name    { $user_by_name{$_[-1]} // () };
+sub user_by_name    {
+  # Sometimes we actually get passed a <@U024BE7LH> escape sequence,
+  #   in that case we just return the unescaped user id
+  my $user = pop @_;
+  $user =~ m/^<@([^>]+)>$/ ? $1 : $user_by_name{$user} // ();
+}
+
 
 sub user_data { shift; my $user = $_[-1]; $user_data{$user} // () }
 
