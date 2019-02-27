@@ -4,6 +4,43 @@ use 5.014;
 use warnings;
 use strict;
 
+use AnyEvent::TLS;
+use Carp qw(croak);
+{  
+    no strict 'refs';
+    my $old_ref = \&{ 'AnyEvent::TLS::new' };
+    *{ 'AnyEvent::TLS::new' } = sub {
+        my ( $class, %param ) = @_;
+
+        my $self = $old_ref->( $class, %param );
+
+        $self->{host_name} = $param{host_name}
+            if exists $param{host_name};
+
+        $self;
+    };
+}
+
+{
+    no strict 'refs';
+    my $old_ref = \&{ 'AnyEvent::TLS::_get_session' };
+    *{ 'AnyEvent::TLS::_get_session' } = sub($$;$$) {
+        my ($self, $mode, $ref, $cn) = @_;
+
+        my $session = $old_ref->( @_ );
+
+        if ( $mode eq 'connect' ) {
+            if ( $self->{host_name} ) {
+                croak 'Client side SNI not supported for this openssl'
+                    if Net::SSLeay::OPENSSL_VERSION_NUMBER() < 0x01000000;
+                Net::SSLeay::set_tlsext_host_name( $session, $self->{host_name} );
+            }
+        }
+
+        $session;
+    };
+}
+
 # there's three packages in this file
 #
 # Bort: the public API for plugins. Everything in this package must be safe for
@@ -411,6 +448,9 @@ sub http_request {
   $callback = pop @_ if ref $_[-1] eq 'CODE';
   my (undef, $method, $url, %args) = @_;
 
+  use URI;
+  my $uri = URI->new($url);
+
   state $cookie_jar = {};
   state $dns = Net::DNS::Paranoid->new;
 
@@ -434,6 +474,9 @@ sub http_request {
   $url = "$url"; # stringify URI objects
 
   Bort->log("doing $method request to $url") unless $args{_quiet};
+
+  # Hack, support SNI until we upgrade AnyEvent to 7.12 or higher
+  $args{tls_ctx}{host_name} = $uri->host;
 
   AnyEvent::HTTP::http_request($method => $url, %args, sub {
     my ($body, $headers) = @_;
