@@ -6,7 +6,7 @@ use strict;
 
 use AnyEvent::TLS;
 use Carp qw(croak);
-{  
+{
     no strict 'refs';
     my $old_ref = \&{ 'AnyEvent::TLS::new' };
     *{ 'AnyEvent::TLS::new' } = sub {
@@ -311,13 +311,17 @@ sub reply {
 
 sub reply_private {
   my ($self, @msg) = @_;
-  Bort->slack_call("im.open", user => $self->user, sub {
-    my $channel = shift->{channel}->{id};
-    Bort->send(
-      to       => $channel,
-      messages => \@msg
-    );
-  });
+  Bort->slack_call(
+    "conversations.open",
+    users     => $self->user,
+    sub {
+      my $channel = shift->{channel}->{id};
+      Bort->send(
+        to       => $channel,
+        messages => \@msg
+      );
+    },
+  );
 }
 
 }
@@ -375,14 +379,25 @@ my %team_data;
 sub load_names {
   ($my_user, $my_user_name) = @{$slack->metadata->{self}}{qw(id name)};
   $log->("Starting name/channels update...");
-  Bort->slack_call("groups.list", sub {
-    my %group_names = map { $_->{id} => $_->{name} } @{shift->{groups}};
-    Bort->slack_call("channels.list", sub {
-      %channel_names = (%group_names, map { $_->{id} => $_->{name} } @{shift->{channels}});
-      %channel_by_name = reverse %channel_names;
-      $log->(join(' ', scalar keys %channel_by_name, "channels loaded"));
-    });
-  });
+  Bort->slack_call(
+    "conversations.list",
+    types => 'mpim,private_channel',
+    exclude_archived => 'true',
+    sub {
+      my %group_names = map { $_->{id} => $_->{name} } @{shift->{groups}};
+
+      Bort->slack_call(
+        "conversations.list",
+        types => 'public_channel',
+        exclude_archived => 'true',
+        sub {
+          %channel_names = (%group_names, map { $_->{id} => $_->{name} } @{shift->{channels}});
+          %channel_by_name = reverse %channel_names;
+          $log->(join(' ', scalar keys %channel_by_name, "channels loaded"));
+        }
+      );
+    }
+  );
   Bort->slack_call("users.list", sub {
     my $members = shift->{members};
     %user_data = map { $_->{id} => $_ } @$members;
