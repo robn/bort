@@ -159,6 +159,15 @@ sub run {
   });
 
   $log->("Connecting to Slack...");
+  
+  # The default START_URL, rtm.start, would still work, but is being deprecated, and
+  # they send emails like "hey bruv, you're using that API what got deprecated, innit?"
+  #
+  # So, this will use the new long-term one.  It acts much like the new one, but
+  # returns less data.  Make sure you fetch any of the previously-eagerly-provided
+  # stuff! -- rjbs, 2021-11-10
+  local $AnyEvent::SlackRTM::START_URL = 'https://slack.com/api/rtm.connect';
+
   $slack->start;
 
   $cv->recv;
