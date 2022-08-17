@@ -1,3 +1,5 @@
+*ARCHIVED*. If you're looking for a Perl chat bot for Slack, Discord, IRC, etc, [Synergy](https://github.com/fastmail/synergy) is a much better choice!
+
 # bort
 
 ![](https://frinkiac.com/img/S06E04/736201/medium.jpg)
